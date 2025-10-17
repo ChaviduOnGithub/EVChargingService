@@ -11,13 +11,13 @@ namespace EVChargingService.Models
 
         [BsonElement("StationId")]
         [BsonRepresentation(BsonType.ObjectId)]
-        public string StationId { get; set; }
+        public string? StationId { get; set; } // Nullable now
 
         [BsonElement("Name")]
         public string Name { get; set; }
 
         [BsonElement("Role")]
-        public string Role { get; set; } // Backoffice or Station operator
+        public string Role { get; set; } // Backoffice, Operator, or Super Admin
 
         [BsonElement("Email")]
         public string Email { get; set; }

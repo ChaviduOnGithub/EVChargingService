@@ -22,6 +22,11 @@ namespace EVChargingService.Services
             _jwtKey = config["Jwt:Key"];
         }
 
+        public async Task<Staff> GetByEmailAsync(string email)
+        {
+            return await _staff.Find(s => s.Email == email && s.IsActive).FirstOrDefaultAsync();
+        }
+
         public async Task<Staff?> GetByIdAsync(string id)
         {
             return await _staff.Find(s => s.StaffId == id && s.IsActive).FirstOrDefaultAsync();

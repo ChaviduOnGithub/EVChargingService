@@ -8,12 +8,14 @@ namespace EVChargingService.Services
     public class BookingService
     {
         private readonly IMongoCollection<Booking> _bookings;
+        private readonly IMongoCollection<Station> _stations;
 
         public BookingService(IOptions<DatabaseSettings> dbSettings)
         {
             var client = new MongoClient(dbSettings.Value.ConnectionString);
             var database = client.GetDatabase(dbSettings.Value.DatabaseName);
             _bookings = database.GetCollection<Booking>(dbSettings.Value.BookingsCollection);
+            _stations = database.GetCollection<Station>(dbSettings.Value.StationsCollection);
         }
 
         public async Task<List<Booking>> GetAllAsync() =>
@@ -30,20 +32,72 @@ namespace EVChargingService.Services
         // Create Booking with 7-day rule
         public async Task<Booking> CreateAsync(Booking booking)
         {
+            // 1️⃣ Ensure reservation is within 7 days
             if ((booking.ReservationDateTime - DateTime.UtcNow).TotalDays > 7)
                 throw new Exception("Reservation can only be within 7 days from today.");
 
+            // 2️⃣ Get station info
+            var station = await _stations.Find(s => s.StationId == booking.StationId).FirstOrDefaultAsync();
+            if (station == null)
+                throw new Exception("Station not found.");
+
+            booking.StationName = station.Name;
+
+            // 3️⃣ Normalize booking hour (round down to the hour)
+            var bookingHour = new DateTime(
+                booking.ReservationDateTime.Year,
+                booking.ReservationDateTime.Month,
+                booking.ReservationDateTime.Day,
+                booking.ReservationDateTime.Hour,
+                0, 0, DateTimeKind.Utc);
+
+            // 4️⃣ Count existing bookings for this station in the same hour
+            var existingCount = await _bookings.CountDocumentsAsync(b =>
+                b.StationId == booking.StationId &&
+                b.Status != "Cancelled" &&
+                b.ReservationDateTime.Year == bookingHour.Year &&
+                b.ReservationDateTime.Month == bookingHour.Month &&
+                b.ReservationDateTime.Day == bookingHour.Day &&
+                b.ReservationDateTime.Hour == bookingHour.Hour
+            );
+
+            // 5️⃣ Compare with available slots
+            if (existingCount >= station.AvailableSlots)
+                throw new Exception($"No available slots at {bookingHour:yyyy-MM-dd HH:mm}. Please select another time.");
+
+            // 6️⃣ Save booking
             await _bookings.InsertOneAsync(booking);
 
-            // Generate QR after booking is saved (use BookingId as payload)
+            // 7️⃣ Generate QR Code (booking reference)
             booking.QRCode = GenerateQRCode(booking.BookingId);
 
-            // Update booking with QRCode string
             var update = Builders<Booking>.Update.Set(b => b.QRCode, booking.QRCode);
             await _bookings.UpdateOneAsync(b => b.BookingId == booking.BookingId, update);
 
             return booking;
         }
+        //public async Task<Booking> CreateAsync(Booking booking)
+        //{
+        //    if ((booking.ReservationDateTime - DateTime.UtcNow).TotalDays > 7)
+        //        throw new Exception("Reservation can only be within 7 days from today.");
+
+        //    // Lookup station
+        //    var station = await _stations.Find(s => s.StationId == booking.StationId).FirstOrDefaultAsync();
+        //    if (station == null)
+        //        throw new Exception("Station not found.");
+
+        //    booking.StationName = station.Name;
+
+        //    await _bookings.InsertOneAsync(booking);
+
+        //    // Generate QR
+        //    booking.QRCode = GenerateQRCode(booking.BookingId);
+
+        //    var update = Builders<Booking>.Update.Set(b => b.QRCode, booking.QRCode);
+        //    await _bookings.UpdateOneAsync(b => b.BookingId == booking.BookingId, update);
+
+        //    return booking;
+        //}
 
         private string GenerateQRCode(string bookingId)
         {
@@ -83,7 +137,22 @@ namespace EVChargingService.Services
         }
 
         // Get bookings by owner
-        public async Task<List<Booking>> GetByOwnerAsync(string ownerNIC) =>
-            await _bookings.Find(b => b.OwnerNIC == ownerNIC).ToListAsync();
+        public async Task<List<Booking>> GetByOwnerAsync(string ownerNIC)
+        {
+            var bookings = await _bookings.Find(b => b.OwnerNIC == ownerNIC).ToListAsync();
+
+            foreach (var b in bookings)
+            {
+                if (string.IsNullOrEmpty(b.StationName))
+                {
+                    var station = await _stations.Find(s => s.StationId == b.StationId).FirstOrDefaultAsync();
+                    b.StationName = station?.Name;
+                }
+            }
+
+            return bookings;
+        }
+
+
     }
 }

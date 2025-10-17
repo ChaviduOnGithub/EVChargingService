@@ -18,8 +18,10 @@ namespace EVChargingService.Models
         [BsonElement("Phone")]
         public string Phone { get; set; }
 
+        [BsonElement("PasswordHash")]
+        public string PasswordHash { get; set; }
+
         [BsonElement("Status")]
         public string Status { get; set; } = "Active";
     }
 }
-

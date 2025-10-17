@@ -1,5 +1,7 @@
-﻿using EVChargingService.Models;
+﻿using System.Security.Claims;
+using EVChargingService.Models;
 using EVChargingService.Services;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
 
 namespace EVChargingService.Controllers
@@ -45,14 +47,10 @@ namespace EVChargingService.Controllers
             if (existing == null) return NotFound();
 
             staff.StaffId = id;
-
-            // ✅ Preserve password hash
-            staff.PasswordHash = existing.PasswordHash;
-
+            staff.PasswordHash = existing.PasswordHash; // preserve password
             await _service.UpdateAsync(id, staff);
             return Ok(staff);
         }
-
 
         [HttpDelete("{id}")]
         public async Task<IActionResult> Delete(string id)
@@ -62,6 +60,23 @@ namespace EVChargingService.Controllers
 
             await _service.DeleteAsync(id);
             return NoContent();
+        }
+
+        //Staff self-deletes their own account
+        [Authorize]
+        [HttpDelete("self")]
+        public async Task<IActionResult> DeleteSelf()
+        {
+            var email = User.FindFirstValue(ClaimTypes.Email);
+            if (string.IsNullOrEmpty(email))
+                return Unauthorized("Invalid user token");
+
+            var staff = await _service.GetByEmailAsync(email);
+            if (staff == null)
+                return NotFound("Staff not found");
+
+            await _service.DeleteAsync(staff.StaffId);
+            return Ok(new { message = "Your account has been permanently deleted." });
         }
 
         [HttpPatch("{id}/deactivate")]
@@ -79,5 +94,28 @@ namespace EVChargingService.Controllers
             if (!result) return BadRequest("Unable to activate staff");
             return Ok(new { message = $"Staff {id} activated" });
         }
+
+        [Authorize]
+        [HttpPut("self")]
+        public async Task<IActionResult> UpdateSelf([FromBody] Staff updated)
+        {
+            var email = User.FindFirstValue(ClaimTypes.Email);
+            if (string.IsNullOrEmpty(email))
+                return Unauthorized("Invalid token");
+
+            var staff = await _service.GetByEmailAsync(email);
+            if (staff == null)
+                return NotFound("Staff not found");
+
+            // Preserve ID and password if not changing
+            updated.StaffId = staff.StaffId;
+            updated.PasswordHash = string.IsNullOrEmpty(updated.PasswordHash)
+                                    ? staff.PasswordHash
+                                    : updated.PasswordHash;
+
+            await _service.UpdateAsync(staff.StaffId, updated);
+            return Ok(updated);
+        }
+
     }
 }

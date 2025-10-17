@@ -8,6 +8,8 @@
         public string StationsCollection { get; set; }
         public string BookingsCollection { get; set; }
         public string UsersCollection { get; set; }
+        public string StaffsCollection { get; set; }
+
     }
 
 }
