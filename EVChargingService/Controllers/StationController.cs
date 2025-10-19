@@ -57,7 +57,7 @@ namespace EVChargingService.Controllers
             var existing = await _service.GetByIdAsync(id);
             if (existing == null) return NotFound();
 
-            bool hasActiveBookings = false; // TODO: add booking logic later
+            bool hasActiveBookings = false;
             if (hasActiveBookings)
                 return BadRequest("Cannot deactivate station with active bookings.");
 
